@@ -42,6 +42,9 @@ jobs:
           context: .
           platforms: linux/amd64
           push: true
+          # 包可见性不跟随仓库：仓库 public 了包还是 private，部署机拉不了。
+          # GITHUB_TOKEN 自带 packages: write，不用额外配 PAT。
+          visibility: public
           build-args: |
             APT_MIRROR=${{ vars.APT_MIRROR || '' }}
             NPM_REGISTRY=${{ vars.NPM_REGISTRY || '' }}
