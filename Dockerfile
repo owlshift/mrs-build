@@ -6,8 +6,8 @@ FROM node:24-slim AS builder
 
 WORKDIR /usr/src/microsoft-rewards-script
 
-# 国内镜像源。armbian 在国内必须走 npmmirror/aliyun（官方源太慢或不通）；
-# GitHub Actions runner 在美国，直接用官方源更快更稳，所以做成可覆盖的 build arg。
+# 国内镜像源。部署机在国内时必须走 npmmirror/aliyun（官方源太慢或不通）；
+# CI runner 在境外，直接用官方源更快更稳，所以做成可覆盖的 build arg。
 # 留空即不设置，沿用 node 镜像自带的官方源。
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 ARG PLAYWRIGHT_HOST=https://registry.npmmirror.com/-/binary/playwright

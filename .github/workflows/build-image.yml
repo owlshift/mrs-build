@@ -1,7 +1,7 @@
 name: Build image
 
 # 手动触发，或 Dockerfile/compose/Dockerfile 相关文件变化时触发。
-# 不做定时构建：镜像只在需要时重建，armbian 侧 pull 即可。
+# 不做定时构建：镜像只在需要时重建，部署机侧 pull 即可。
 on:
   workflow_dispatch:
   push:
@@ -48,8 +48,8 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:china
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
-          # armbian 板子内存只有 785MiB，本地 build 会耗尽磁盘。
-          # Actions runner 有 14GB，build cache 放这里，armbian 只 pull。
+          # 部署机磁盘通常吃紧，本地 build 会耗尽空间。
+          # Actions runner 有充足临时盘，build cache 放这里，部署机只 pull。
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false

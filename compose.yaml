@@ -13,7 +13,7 @@ services:
         mem_limit: 700m
         memswap_limit: 900m
         ulimits:
-            # 禁止 core dump：OOM 时曾生成 734MB core dump 撑爆 6.4G 系统盘
+            # 禁止 core dump：OOM 时会生成数百 MB 的 core dump 撑爆系统盘
             core: 0
         volumes:
             - ./config:/usr/src/microsoft-rewards-script/config
@@ -26,9 +26,9 @@ services:
             # ── Scheduler ──────────────────────────────────────
             TZ: 'Asia/Shanghai' # Set your timezone for proper scheduling
             NODE_ENV: 'production'
-            # V8 老生代上限：本机物理内存仅 785MiB，Node 自动算出的默认上限约 275MB，
-            # 实测跑到 273MB 即 "Ineffective mark-compacts near heap limit" 崩溃。
-            # 480MB 需与 mem_limit 700m 配套，留约 220MB 给 Chromium。
+            # V8 老生代上限：需与 mem_limit 配套，留约 220MB 给 Chromium。
+            # 物理内存小的设备上，Node 自动算出的默认上限可能只有 ~275MB，
+            # 长跑任务会撞上 "Ineffective mark-compacts near heap limit"。
             NODE_OPTIONS: '--max-old-space-size=480 --disable-warning=ExperimentalWarning'
             # CRON_SCHEDULE is the *initial* default. It will run as default unless changed by the API
             # API schedule changes are saved to ./config/schedule.json, delete
@@ -109,7 +109,7 @@ services:
         mem_limit: 700m
         memswap_limit: 900m
         ulimits:
-            # 禁止 core dump：OOM 时曾生成 734MB core dump 撑爆 6.4G 系统盘
+            # 禁止 core dump：OOM 时会生成数百 MB 的 core dump 撑爆系统盘
             core: 0
         volumes:
             - ./config2:/usr/src/microsoft-rewards-script/config
@@ -124,8 +124,8 @@ services:
             NODE_OPTIONS: '--max-old-space-size=480 --disable-warning=ExperimentalWarning'
             CRON_SCHEDULE: "0 14 * * *"
             RUN_ON_START: "false"
-            # 卡死进程超时：默认 8h 会让 c1（07:00 触发）活过 14:00，
-            # 届时 c2 启动两个容器各 700m 直接撞车 OOMKill。压到 4h。
+            # 卡死进程超时：默认 8h 会让早档任务活过下一档的触发时间，
+            # 届时两个容器各 700m 直接撞车 OOMKill。压到 4h。
             STUCK_PROCESS_TIMEOUT_HOURS: "4"
             CONFIG_CLAWBOT_ENABLED: "true"
             CONFIG_CLAWBOT_AUTHFILE: "/usr/src/microsoft-rewards-script/clawbot/clawbot-auth.json"
