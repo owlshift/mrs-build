@@ -53,14 +53,3 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
-
-      # 包可见性不跟随仓库：仓库转 public 后包仍是 private，部署机 pull 会
-      # unauthorized。GITHUB_TOKEN 自带 packages:write，无需额外 PAT。
-      - name: Set package public
-        if: github.ref == 'refs/heads/main'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh api -X PATCH \
-            "/users/${{ github.repository_owner }}/packages/container/${{ github.event.repository.name }}/visibility" \
-            -f visibility=public
