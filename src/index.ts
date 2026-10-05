@@ -1158,6 +1158,15 @@ export class MicrosoftRewardsBot {
                     )
                 }
             }
+
+            // 低配机省内存：账号结束即释放本轮缓存，多账号连续跑时不堆积
+            this.reactSnapshot = null
+            this.searchTopicsCache = null
+            this.nextActions = {}
+            const maybeGc = (globalThis as unknown as { gc?: () => void }).gc
+            if (typeof maybeGc === 'function') {
+                maybeGc()
+            }
         }
     }
 }

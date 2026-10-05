@@ -1,5 +1,6 @@
 import { URLs } from '../constants/urls'
 import { BING_APP_USER_AGENT } from '../constants/userAgents'
+import PQueue from 'p-queue'
 import type { BrowserContext, Cookie, Page } from 'patchright'
 import type { HttpRequestConfig } from '../util/Http'
 
@@ -330,6 +331,8 @@ export default class BrowserFunc {
             this.bot.nextActions = await this.resolveActionIds(page, sources)
 
             const dashboardRendered = /<section\b[^>]*\bid=["']dailyset["']/i.test(sources.join('\n'))
+            // 低配机省内存：快照和 action id 已生成，三份 HTML 原文不再需要
+            sources.length = 0
             if (!dashboardRendered) {
                 throw new Error(
                     'Rewards dashboard did not render (no section#dailyset) - likely a login/redirect issue, aborting'
@@ -492,6 +495,9 @@ export default class BrowserFunc {
                 'BOOTSTRAP',
                 `已发现 ${Object.keys(result).length} 个 action id: [${Object.keys(result).join(', ')}]`
             )
+
+            // 低配机省内存：action id 已提取完，chunk 原文立即释放，不等 GC
+            jsByPath.clear()
         } catch (error) {
             this.bot.logger.error(
                 this.bot.isMobile,
@@ -505,9 +511,11 @@ export default class BrowserFunc {
 
     private async fetchJsChunks(page: Page, paths: string[]): Promise<Map<string, string>> {
         const result = new Map<string, string>()
+        // 低配机省内存：chunk 并发拉取限流，避免几十个 JS 同时驻留造成峰值
+        const queue = new PQueue({ concurrency: 3 })
 
-        await Promise.all(
-            paths.map(async path => {
+        await queue.addAll(
+            paths.map(path => async () => {
                 try {
                     const res = await page.request.get(URLs.rewards.path(path))
                     if (res.ok()) {

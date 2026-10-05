@@ -40,7 +40,12 @@ class Browser {
         '--disable-dev-shm-usage',
         '--disable-background-networking',
         '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding'
+        '--disable-renderer-backgrounding',
+        // 低配机省内存：headless 下 GPU/扩展/后台定时器纯属开销，关闭不影响页面自动化
+        '--disable-gpu',
+        '--disable-software-rasterizer',
+        '--disable-extensions',
+        '--disable-background-timer-throttling'
     ] as const
 
     constructor(bot: MicrosoftRewardsBot) {
