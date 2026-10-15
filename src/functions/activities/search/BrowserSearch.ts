@@ -197,7 +197,15 @@ export class Search extends BaseActivity {
                     'SEARCH-BING',
                     `搜索尝试 ${attempt}/${MAX_QUERY_ATTEMPTS} 失败 | 查询="${query}" | ${error instanceof Error ? error.message : String(error)}`
                 )
-                if (attempt === MAX_QUERY_ATTEMPTS) throw error
+                // 热修：末次失败不再抛出（抛出会终结整个搜索会话），改为跳过本条查询继续下一条
+                if (attempt === MAX_QUERY_ATTEMPTS) {
+                    this.bot.logger.warn(isMobile, 'SEARCH-BING', `跳过查询(不终结会话) | 查询="${query}"`)
+                    await page.goto(URLs.bing.origin).catch(() => {})
+                    return
+                }
+                // 热修：重试前重新加载页面，避免在同一个已卡死的 page 上反复超时累积内存
+                await page.goto(URLs.bing.origin).catch(() => {})
+                await page.waitForLoadState('domcontentloaded', { timeout: 8000 }).catch(() => {})
                 await this.bot.utils.wait(2000)
             }
         }
@@ -243,7 +251,7 @@ export class Search extends BaseActivity {
 class PointsTracker implements SearchTracker {
     public readonly context = 'SEARCH-BING'
     public readonly maxSearches = POINTS_MAX_SEARCHES
-    public readonly stagnantLimit = POINTS_STAGNANT_LIMIT
+    public stagnantLimit = POINTS_STAGNANT_LIMIT
 
     private missing: MissingSearchPoints = { mobilePoints: 0, desktopPoints: 0, edgePoints: 0, totalPoints: 0 }
     private readonly runOnZeroPoints: boolean
@@ -255,6 +263,15 @@ class PointsTracker implements SearchTracker {
         private isMobile: boolean
     ) {
         this.runOnZeroPoints = this.bot.config.searchSettings.runOnZeroPoints ?? false
+
+        // qoder-patch: 0..5 random bonus (zero-point) searches, desktop only
+        // 桌面端零分模式随机多容忍 0~5 次无积分搜索，打散规律性；抽到 0 则直接关掉零分模式
+        if (this.runOnZeroPoints && !this.isMobile) {
+            const extra = Math.floor(Math.random() * 6)
+            if (extra === 0) this.runOnZeroPoints = false
+            else this.stagnantLimit = extra
+        }
+
         this.searchProgress = new SearchProgress(this.bot)
     }
 

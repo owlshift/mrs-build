@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
+import os from 'node:os'
 import cluster, { Worker } from 'cluster'
 import type { BrowserContext, Cookie, Page } from 'patchright'
 import pkg from '../package.json'
@@ -447,9 +448,12 @@ export class MicrosoftRewardsBot {
         const totalFinalPoints = accountStats.reduce((sum, s) => sum + s.finalPoints, 0)
         const totalDurationMinutes = ((Date.now() - runStartTime) / 1000 / 60).toFixed(1)
         const timestamp = formatLocalTimestamp(new Date())
+        // qoder-patch: 标题带来源标识，便于区分是哪台机器推的
+        // 注：原补丁想读 config.webhook.clawbot.title，但该类型只有 enabled/authFile，实际恒为 undefined，故只取主机名
+        const srcLabel = os.hostname()
 
         const lines: string[] = [
-            `每日积分摘要 | ${timestamp}`,
+            `【${srcLabel}】每日积分摘要 | ${timestamp}`,
             `状态: ${hadWorkerFailure ? '异常' : '完成'}`,
             `账户数: ${accountStats.length}`,
             `总收集积分: +${totalCollectedPoints}`,
@@ -1157,15 +1161,6 @@ export class MicrosoftRewardsBot {
                         `桌面端上下文关闭失败 | ${error instanceof Error ? error.message : String(error)}`
                     )
                 }
-            }
-
-            // 低配机省内存：账号结束即释放本轮缓存，多账号连续跑时不堆积
-            this.reactSnapshot = null
-            this.searchTopicsCache = null
-            this.nextActions = {}
-            const maybeGc = (globalThis as unknown as { gc?: () => void }).gc
-            if (typeof maybeGc === 'function') {
-                maybeGc()
             }
         }
     }

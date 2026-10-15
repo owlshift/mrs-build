@@ -590,18 +590,38 @@ export class QueryCore {
     }
 
     getLocalQueryList(): string[] {
-        try {
-            const file = path.join(__dirname, './search-queries.json')
-            const queries = JSON.parse(fs.readFileSync(file, 'utf8')) as string[]
-            return Array.isArray(queries) ? queries : []
-        } catch (error) {
-            this.bot.logger.debug(
-                this.bot.isMobile,
-                'SEARCH-LOCAL-QUERY-LIST',
-                `读取 search-queries.json 失败 | ${error instanceof Error ? error.message : String(error)}`
-            )
-            return []
+        // qoder-patch: per-account local query file support
+        // 优先读 ./search-queries.<邮箱前缀>.json，缺失则回落到公共 search-queries.json
+        const user = (this.bot && this.bot.userData && this.bot.userData.userName) || ''
+        const candidates: string[] = []
+        if (user) candidates.push(path.join(__dirname, './search-queries.' + user + '.json'))
+        candidates.push(path.join(__dirname, './search-queries.json'))
+
+        for (const file of candidates) {
+            try {
+                if (!fs.existsSync(file)) continue
+                const queries = JSON.parse(fs.readFileSync(file, 'utf8')) as string[]
+                if (Array.isArray(queries) && queries.length > 0) {
+                    if (file !== candidates[candidates.length - 1]) {
+                        this.bot.logger.debug(
+                            this.bot.isMobile,
+                            'SEARCH-LOCAL-QUERY-LIST',
+                            `使用账号专属词库 | ${file} | 词数=${queries.length}`
+                        )
+                    }
+                    return queries
+                }
+            } catch (error) {
+                this.bot.logger.debug(
+                    this.bot.isMobile,
+                    'SEARCH-LOCAL-QUERY-LIST',
+                    `读取 ${file} 失败 | ${error instanceof Error ? error.message : String(error)}`
+                )
+                continue
+            }
         }
+
+        return []
     }
 
     /**
@@ -618,13 +638,14 @@ export class QueryCore {
      * @returns 热搜标题字符串数组
      */
     async getChinaTrends(geoLocale: string = 'CN'): Promise<string[]> {
-        const allSources = ['BaiduHot', 'TouTiaoHot', 'DouYinHot', 'WeiBoHot', 'ZhiHuHot']
-        const baseUrl = 'https://api.gmya.net/Api/'
+        // 数据源为自建 dailyhot（见 ops/inventory.md），URL 路径即源名；可用 CHINA_HOT_API_BASE 覆盖
+        const allSources = ['zhihu', 'toutiao', 'douyin', 'bilibili', '36kr', 'thepaper']
+        const baseUrl = process.env.CHINA_HOT_API_BASE || 'http://100.103.150.101:6688/'
         // appkey 来自配置；留空走免费档（有频率限制），填入则解除限流
         const appkey = this.bot.config.searchSettings.chinaApi?.appkey?.trim() ?? ''
         const hasAppkey = appkey.length > 0
         // 免费档容易被限流：减少首选源数量以降低触发面；有 appkey 则保持 2 个兼顾多样性
-        const pickedCount = hasAppkey ? 2 : 1
+        const pickedCount = hasAppkey ? 3 : 2
         // 免费档源间退避参数（毫秒）；有 appkey 不需要退避
         const backoffMin = 1200
         const backoffMax = 2500
@@ -732,11 +753,74 @@ export class QueryCore {
             )
         }
 
+        // qoder-patch: persona mix —— 按账号人设词库重排主题，人设为主、热搜为辅
+        try {
+            const puser =
+                String(this.bot?.userData?.userName || '')
+                    .split('@')[0]
+                    ?.trim() ?? ''
+            const pfile = puser ? path.join(__dirname, './search-persona.' + puser + '.json') : ''
+            if (pfile && fs.existsSync(pfile)) {
+                const P = JSON.parse(fs.readFileSync(pfile, 'utf8')) as { keywords?: string[]; topics?: string[] }
+                const hot = Array.from(titles)
+                const kws = P.keywords || []
+                const hit = hot.filter(t => kws.some(k => String(t).includes(k)))
+                const hotUse = hit.length >= 6 ? hit : hit.concat(hot.filter(t => !hit.includes(t)))
+                const need = Math.min(40, Math.max(20, Math.round(hotUse.length * 1.5)))
+                const pool = (P.topics || []).filter(t => !titles.has(t))
+                const picks = this.bot.utils.shuffleArray([...pool]).slice(0, need)
+                const hotPick = this.bot.utils.shuffleArray([...hotUse]).slice(0, Math.max(4, Math.round(need * 0.66)))
+                titles.clear()
+                for (const t of picks) titles.add(String(t))
+                for (const t of hotPick) titles.add(String(t))
+                this.bot.logger.info(
+                    this.bot.isMobile,
+                    'SEARCH-PERSONA',
+                    '人设混排 | 人设主题=' + picks.length + ' | 热搜主题=' + hotPick.length + ' | 词库余量=' + pool.length + ' | 词表=' + titles.size,
+                    'green'
+                )
+            } else {
+                this.bot.logger.warn(this.bot.isMobile, 'SEARCH-PERSONA', '人设词库缺失或用户名为空，已跳过: [' + puser + ']')
+            }
+        } catch (e) {
+            this.bot.logger.warn(this.bot.isMobile, 'SEARCH-PERSONA', '人设混排异常，已跳过: ' + (e && (e as Error).message ? (e as Error).message : e))
+        }
+        // qoder-patch: persona mix end
+
+        // qoder-patch: min pool 25 —— 词池不足 25 时从账号词库补充
+        if (titles.size < 25) {
+            try {
+                let local: string[] = []
+                try {
+                    local = JSON.parse(fs.readFileSync(path.join(__dirname, './search-queries.json'), 'utf8')) as string[]
+                } catch (e) {
+                    local = this.getLocalQueryList() || []
+                }
+                let added = 0
+                for (const q of this.bot.utils.shuffleArray([...local])) {
+                    if (titles.size >= 25) break
+                    const t = String(q).trim()
+                    if (t && !titles.has(t)) {
+                        titles.add(t)
+                        added++
+                    }
+                }
+                if (added)
+                    this.bot.logger.info(
+                        this.bot.isMobile,
+                        'SEARCH-CHINA-TRENDS',
+                        '词池不足25 | 已从账号词库补充=' + added + ' | 现词数=' + titles.size
+                    )
+            } catch (e) {
+                // 补词失败不影响主流程
+            }
+        }
+
         return Array.from(titles)
     }
 
     /**
-     * 构造 gmya.net 热搜 API 的请求 URL。
+     * 构造热搜 API 的请求 URL。
      */
     private buildChinaApiUrl(baseUrl: string, source: string, appkey: string): string {
         return appkey ? `${baseUrl}${source}?format=json&appkey=${appkey}` : `${baseUrl}${source}`
